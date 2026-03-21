@@ -117,13 +117,16 @@ def render_kakao_map(locations, height=700, level=8, show_my_location=False):
     <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_API_KEY}&autoload=false"></script>
     <script>
         var map, markers = [], infowindows = [];
-        var RED_MARKER_IMG = new kakao.maps.MarkerImage(
-            'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png',
-            new kakao.maps.Size(31, 35),
-            {{offset: new kakao.maps.Point(13, 34)}}
-        );
+        var RED_MARKER_IMG = null; // 초기화는 initMap에서 수행
 
         function initMap() {{
+            // SDK 로드 완료 후 객체 생성
+            RED_MARKER_IMG = new kakao.maps.MarkerImage(
+                'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png',
+                new kakao.maps.Size(31, 35),
+                {{offset: new kakao.maps.Point(13, 34)}}
+            );
+
             var mapContainer = document.getElementById('map');
             var loadingMsg = document.getElementById('loading-msg');
             if (loadingMsg) loadingMsg.style.display = 'none';
@@ -241,4 +244,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
