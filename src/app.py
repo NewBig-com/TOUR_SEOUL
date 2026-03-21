@@ -118,10 +118,21 @@ def render_kakao_map(locations, selected_name=None, height=600, level=8, show_my
             var selectedName = "{selected_name if selected_name else ''}";
 
             for (var i = 0; i < positions.length; i ++) {{
+                var markerImage = null;
+                // 선택된 관광지인 경우 빨간색 마커 적용
+                if (selectedName && positions[i].title === selectedName) {{
+                    markerImage = new kakao.maps.MarkerImage(
+                        'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png',
+                        new kakao.maps.Size(31, 35),
+                        {{offset: new kakao.maps.Point(13, 34)}}
+                    );
+                }}
+
                 var marker = new kakao.maps.Marker({{
                     map: map, 
                     position: positions[i].latlng,
-                    title : positions[i].title
+                    title : positions[i].title,
+                    image : markerImage
                 }});
                 
                 var content = '<div style="padding:10px;min-width:150px;font-size:12px;">' + 
