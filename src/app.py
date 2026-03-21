@@ -26,14 +26,8 @@ def load_main_data():
         st.error(f"데이터를 불러오는데 실패했습니다: {e}")
         return pd.DataFrame()
 
-@st.cache_data
-def load_recommendations():
-    project_root = os.path.join(os.path.dirname(__file__), '..')
-    file_path = os.path.join(project_root, 'data1', 'recommendations.csv')
-    if os.path.exists(file_path):
-        return pd.read_csv(file_path)
-    return pd.DataFrame()
 
+@st.cache_data
 def get_coords(query):
     """카카오 로컬 API를 사용하여 위도/경도 반환"""
     url = "https://dapi.kakao.com/v2/local/search/keyword.json"
@@ -48,6 +42,27 @@ def get_coords(query):
     except:
         pass
     return None, None
+
+@st.cache_data
+def get_default_map_data(df):
+    """자치구별 상위 3개 관광지 추출 및 지오코딩"""
+    # 자치구별 검색건수 상위 3개 추출
+    top3_df = df.sort_values(['시/군/구', '검색건수'], ascending=[True, False]).groupby('시/군/구').head(3).reset_index(drop=True)
+    
+    map_data = []
+    for _, row in top3_df.iterrows():
+        query = f"서울 {row['시/군/구']} {row['관광지명']}"
+        # get_coords는 이미 캐싱되어 있으므로 내부 호출도 효율적임
+        lat, lng = get_coords(query)
+        if lat:
+            map_data.append({
+                'name': row['관광지명'],
+                'category': row['소분류 카테고리'],
+                'district': row['시/군/구'],
+                'lat': lat,
+                'lng': lng
+            })
+    return top3_df, map_data
 
 def render_kakao_map(locations, selected_name=None, height=600, level=8):
     """카카오 맵 JavaScript API를 사용하여 지도를 렌더링"""
@@ -163,11 +178,10 @@ def main():
     st.markdown("자치구별 인기 명소와 카테고리별 검색 결과를 확인하세요.")
 
     df = load_main_data()
-    rec_df = load_recommendations()
 
     # 1. 상위 검색 필터 (중분류 카테고리)
     categories = sorted(df['중분류 카테고리'].unique()) if not df.empty else []
-    selected_categories = st.multiselect("📂 중분류 카테고리 선택 (전체 선택 시 자치구별 상위 5개 표시)", categories)
+    selected_categories = st.multiselect("📂 중분류 카테고리 선택 (미선택 시 자치구별 상위 3개 표시)", categories)
 
     # 데이터 준비
     is_filtered = len(selected_categories) > 0
@@ -192,18 +206,9 @@ def main():
                         'lng': lng
                     })
     else:
-        # 기본값: 자치구별 상위 5개 (recommendations.csv)
-        display_df = rec_df
-        if not rec_df.empty:
-            for _, row in rec_df.iterrows():
-                if pd.notnull(row['lat']) and pd.notnull(row['lng']):
-                    map_data.append({
-                        'name': row['관광지명'],
-                        'category': row['소분류 카테고리'],
-                        'district': row['시/군/구'],
-                        'lat': row['lat'],
-                        'lng': row['lng']
-                    })
+        # 기본값: 자치구별 상위 3개 (new_total_seoul_tour.csv 활용)
+        with st.spinner("자치구별 인기 명소를 불러오는 중입니다..."):
+            display_df, map_data = get_default_map_data(df)
 
     # 지도 및 목록 상호작용
     col1, col2 = st.columns([2, 1])
@@ -227,3 +232,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
