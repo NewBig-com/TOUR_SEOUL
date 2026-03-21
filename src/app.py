@@ -46,13 +46,11 @@ def get_coords(query):
 @st.cache_data
 def get_default_map_data(df):
     """자치구별 상위 3개 관광지 추출 및 지오코딩"""
-    # 자치구별 검색건수 상위 3개 추출
     top3_df = df.sort_values(['시/군/구', '검색건수'], ascending=[True, False]).groupby('시/군/구').head(3).reset_index(drop=True)
     
     map_data = []
     for _, row in top3_df.iterrows():
         query = f"서울 {row['시/군/구']} {row['관광지명']}"
-        # get_coords는 이미 캐싱되어 있으므로 내부 호출도 효율적임
         lat, lng = get_coords(query)
         if lat:
             map_data.append({
@@ -64,27 +62,16 @@ def get_default_map_data(df):
             })
     return top3_df, map_data
 
-def render_kakao_map(locations, selected_name=None, height=600, level=8, show_my_location=False):
-    """카카오 맵 JavaScript API를 사용하여 지도를 렌더링"""
+def render_kakao_map(locations, height=700, level=8, show_my_location=False):
+    """카카오 맵과 관광지 목록을 통합하여 렌더링"""
     if not locations:
         return st.info("지도에 표시할 데이터가 없습니다.")
 
     markers_js = ""
+    list_items_html = ""
     valid_locs = [l for l in locations if l['lat'] and l['lng']]
     
-    # 선택된 장소가 있으면 해당 장소의 좌표를 중심으로 설정
-    center_lat, center_lng = 37.5665, 126.9780
-    if selected_name:
-        for loc in valid_locs:
-            if loc['name'] == selected_name:
-                center_lat, center_lng = loc['lat'], loc['lng']
-                level = 4 # 강조 시 더 가깝게 확대
-                break
-    elif valid_locs:
-        # 기본적으로 첫 번째 마커 기준 (또는 서울 중심 유지 가능)
-        pass
-
-    for loc in valid_locs:
+    for i, loc in enumerate(valid_locs):
         markers_js += f"""
             {{
                 title: '{loc['name']}', 
@@ -92,132 +79,116 @@ def render_kakao_map(locations, selected_name=None, height=600, level=8, show_my
                 category: '{loc.get('category', '')}',
                 district: '{loc.get('district', '')}'
             }},"""
+        
+        list_items_html += f"""
+            <div class="list-item" onclick="focusMarker({i})" id="item-{i}">
+                <div class="item-name">{loc['name']}</div>
+                <div class="item-info">[{loc.get('district', '')}] {loc.get('category', '')}</div>
+            </div>"""
 
     html_code = f"""
     <head>
         <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+        <style>
+            .container {{ display: flex; width: 100%; height: {height}px; font-family: 'Pretendard', sans-serif; border: 1px solid #eee; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+            #sidebar {{ width: 300px; height: 100%; overflow-y: auto; background: #fff; border-right: 1px solid #eee; }}
+            #map {{ flex: 1; height: 100%; }}
+            .sidebar-header {{ padding: 15px; background: #f8f9fa; border-bottom: 2px solid #eee; font-weight: bold; position: sticky; top: 0; z-index: 10; }}
+            .list-item {{ padding: 12px 15px; border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background 0.2s; }}
+            .list-item:hover {{ background: #f1f3f5; }}
+            .list-item.active {{ background: #e7f5ff; border-left: 4px solid #228be6; }}
+            .item-name {{ font-size: 14px; font-weight: 600; color: #333; }}
+            .item-info {{ font-size: 12px; color: #868e96; margin-top: 4px; }}
+            #loading-msg {{ text-align: center; padding-top: {height//2-10}px; color: #666; }}
+            ::-webkit-scrollbar {{ width: 6px; }}
+            ::-webkit-scrollbar-thumb {{ background: #dee2e6; border-radius: 3px; }}
+        </style>
     </head>
-    <div id="map" style="width:100%;height:{height}px;background-color:#f8f9fa;border:1px solid #ddd;">
-        <div id="loading-msg" style="text-align:center;padding-top:{height//2-10}px;color:#666;font-family:sans-serif;">지도를 불러오는 중...</div>
+    <div class="container">
+        <div id="sidebar">
+            <div class="sidebar-header">📋 관광지 목록 ({len(valid_locs)}곳)</div>
+            {list_items_html}
+        </div>
+        <div id="map">
+            <div id="loading-msg">지도를 불러오는 중...</div>
+        </div>
     </div>
     
     <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_API_KEY}&autoload=false"></script>
     <script>
+        var map, markers = [], infowindows = [];
+        var RED_MARKER_IMG = new kakao.maps.MarkerImage(
+            'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png',
+            new kakao.maps.Size(31, 35),
+            {{offset: new kakao.maps.Point(13, 34)}}
+        );
+
         function initMap() {{
             var mapContainer = document.getElementById('map');
             var loadingMsg = document.getElementById('loading-msg');
             if (loadingMsg) loadingMsg.style.display = 'none';
 
-            var mapOption = {{ 
-                center: new kakao.maps.LatLng({center_lat}, {center_lng}), 
-                level: {level}
-            }};
-
-            var map = new kakao.maps.Map(mapContainer, mapOption); 
+            var mapOption = {{ center: new kakao.maps.LatLng(37.5665, 126.9780), level: {level} }};
+            map = new kakao.maps.Map(mapContainer, mapOption); 
             var positions = [{markers_js}];
-            var selectedName = "{selected_name if selected_name else ''}";
 
             for (var i = 0; i < positions.length; i ++) {{
-                var markerImage = null;
-                // 선택된 관광지인 경우 빨간색 마커 적용
-                if (selectedName && positions[i].title === selectedName) {{
-                    markerImage = new kakao.maps.MarkerImage(
-                        'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png',
-                        new kakao.maps.Size(31, 35),
-                        {{offset: new kakao.maps.Point(13, 34)}}
-                    );
-                }}
-
                 var marker = new kakao.maps.Marker({{
-                    map: map, 
-                    position: positions[i].latlng,
-                    title : positions[i].title,
-                    image : markerImage
+                    map: map, position: positions[i].latlng, title : positions[i].title
                 }});
-                
                 var content = '<div style="padding:10px;min-width:150px;font-size:12px;">' + 
                               '<strong>' + positions[i].title + '</strong><br>' + 
                               (positions[i].district ? '<span>[' + positions[i].district + '] </span>' : '') +
                               '<span>' + positions[i].category + '</span>' +
                               '</div>';
+                var infowindow = new kakao.maps.InfoWindow({{ content: content }});
+                markers.push(marker);
+                infowindows.push(infowindow);
 
-                var infowindow = new kakao.maps.InfoWindow({{
-                    content: content
-                }});
-                
-                // 마우스 오버 시 이름 표시 (요청사항 6번)
-                kakao.maps.event.addListener(marker, 'mouseover', (function(m, info) {{
-                    return function() {{ info.open(map, m); }};
-                }})(marker, infowindow));
-
-                kakao.maps.event.addListener(marker, 'mouseout', (function(info) {{
-                    return function() {{ info.close(); }};
-                }})(infowindow));
-
-                // 클릭 시 고정
-                kakao.maps.event.addListener(marker, 'click', (function(m, info) {{
-                    return function() {{ info.open(map, m); }};
-                }})(marker, infowindow));
-
-                // 선택된 관광지가 있으면 바로 표시
-                if (positions[i].title === selectedName) {{
-                    infowindow.open(map, marker);
-                }}
+                (function(m, info, idx) {{
+                    kakao.maps.event.addListener(m, 'click', function() {{ focusMarker(idx); }});
+                    kakao.maps.event.addListener(m, 'mouseover', function() {{ info.open(map, m); }});
+                    kakao.maps.event.addListener(m, 'mouseout', function() {{ info.close(); }});
+                }})(marker, infowindow, i);
             }}
-            
-            // 선택된 항목이 없을 때만 전체 범위 재설정
-            if (!selectedName && positions.length > 0) {{
+
+            if (positions.length > 0) {{
                 var bounds = new kakao.maps.LatLngBounds();
-                for (var i = 0; i < positions.length; i++) {{
-                    bounds.extend(positions[i].latlng);
-                }}
+                for (var i = 0; i < positions.length; i++) {{ bounds.extend(positions[i].latlng); }}
                 map.setBounds(bounds);
             }}
 
-            // 현재 위치 표시 및 이동 로직
             var showMyLocation = "{'true' if show_my_location else 'false'}";
             if (showMyLocation === 'true' && navigator.geolocation) {{
                 navigator.geolocation.getCurrentPosition(function(position) {{
-                    var lat = position.coords.latitude,
-                        lon = position.coords.longitude;
-                    
+                    var lat = position.coords.latitude, lon = position.coords.longitude;
                     var locPosition = new kakao.maps.LatLng(lat, lon);
-                    var message = '<div style="padding:10px;min-width:150px;font-size:12px;text-align:center;">' + 
-                                  '<strong>내 현재 위치</strong>' + 
-                                  '</div>';
-                    
-                    var imageSrc = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png"; 
-                    var imageSize = new kakao.maps.Size(24, 35); 
-                    var markerImage = new kakao.maps.MarkerImage(imageSrc, imageSize); 
-                    
-                    var marker = new kakao.maps.Marker({{
-                        map: map,
-                        position: locPosition,
-                        image: markerImage,
-                        title: '내 현재 위치'
-                    }});
-                    
-                    var infowindow = new kakao.maps.InfoWindow({{
-                        content: message,
-                        removable: true
-                    }});
-                    
-                    kakao.maps.event.addListener(marker, 'click', function() {{
-                        infowindow.open(map, marker);
-                    }});
-
-                    // 내 위치로 지도 중심 이동
+                    var starImg = new kakao.maps.MarkerImage('https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png', new kakao.maps.Size(24, 35));
+                    new kakao.maps.Marker({{ map: map, position: locPosition, image: starImg, title: '내 위치' }});
                     map.setCenter(locPosition);
-                    map.setLevel(4); // 내 위치 확인 시 확대
+                    map.setLevel(4);
                 }});
             }}
         }}
 
-        if (typeof kakao !== 'undefined') {{
-            kakao.maps.load(initMap);
-        }} else {{
-            document.getElementById('loading-msg').innerHTML = '<h4 style="color:red;">지도 SDK 로드 실패 (도메인 설정 확인)</h4>';
+        function focusMarker(idx) {{
+            for (var i = 0; i < markers.length; i++) {{
+                markers[i].setImage(null);
+                infowindows[i].close();
+                document.getElementById('item-' + i).classList.remove('active');
+            }}
+            var targetMarker = markers[idx];
+            targetMarker.setImage(RED_MARKER_IMG);
+            infowindows[idx].open(map, targetMarker);
+            map.panTo(targetMarker.getPosition());
+            map.setLevel(4);
+            var item = document.getElementById('item-' + idx);
+            item.classList.add('active');
+            item.scrollIntoView({{ behavior: 'smooth', block: 'nearest' }});
         }}
+
+        if (typeof kakao !== 'undefined') {{ kakao.maps.load(initMap); }}
+        else {{ document.getElementById('loading-msg').innerHTML = '<h4 style="color:red;">지도 SDK 로드 실패</h4>'; }}
     </script>
     """
     components.html(html_code, height=height + 20)
@@ -259,27 +230,15 @@ def main():
         with st.spinner("자치구별 인기 명소를 불러오는 중입니다..."):
             display_df, map_data = get_default_map_data(df)
 
-    # 지도 및 목록 상호작용
-    col1, col2 = st.columns([2, 1])
-
-    with col2:
-        st.subheader("📋 관광지 목록")
-        if not display_df.empty:
-            # 관광지 선택 (클릭 효과 대체)
-            list_options = ["선택 안 함"] + display_df['관광지명'].tolist()
-            selected_spot = st.selectbox("목록에서 관광지를 선택하면 지도가 이동합니다.", list_options)
-            
-            st.dataframe(display_df[['시/군/구', '관광지명', '검색건수']], use_container_width=True, height=500)
-        else:
-            selected_spot = "선택 안 함"
-            st.info("표시할 데이터가 없습니다.")
-
-    with col1:
-        st.subheader("📍 서울 지도")
-        # 내 위치 표시 토글 추가
-        show_my_loc = st.checkbox("📍 내 위치 표시 및 이동", value=False)
-        target_name = selected_spot if selected_spot != "선택 안 함" else None
-        render_kakao_map(map_data, selected_name=target_name, height=600, show_my_location=show_my_loc)
+    # 지도 및 목록 통합 UI
+    st.subheader("📍 서울 관광지 지도 (목록 연동)")
+    
+    # 내 위치 표시 토글
+    show_my_loc = st.checkbox("📍 내 위치 표시 및 이동", value=False)
+    
+    # 통합 지도 렌더링 (목록 포함)
+    render_kakao_map(map_data, height=700, show_my_location=show_my_loc)
 
 if __name__ == "__main__":
     main()
+
