@@ -162,6 +162,40 @@ def render_kakao_map(locations, selected_name=None, height=600, level=8):
                 }}
                 map.setBounds(bounds);
             }}
+
+            // 현재 위치 표시 로직 추가
+            if (navigator.geolocation) {{
+                navigator.geolocation.getCurrentPosition(function(position) {{
+                    var lat = position.coords.latitude,
+                        lon = position.coords.longitude;
+                    
+                    var locPosition = new kakao.maps.LatLng(lat, lon);
+                    var message = '<div style="padding:10px;min-width:150px;font-size:12px;text-align:center;">' + 
+                                  '<strong>내 현재 위치</strong>' + 
+                                  '</div>';
+                    
+                    // 마커 이미지 설정 (별 모양 마커로 구분)
+                    var imageSrc = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png"; 
+                    var imageSize = new kakao.maps.Size(24, 35); 
+                    var markerImage = new kakao.maps.MarkerImage(imageSrc, imageSize); 
+                    
+                    var marker = new kakao.maps.Marker({{
+                        map: map,
+                        position: locPosition,
+                        image: markerImage,
+                        title: '내 현재 위치'
+                    }});
+                    
+                    var infowindow = new kakao.maps.InfoWindow({{
+                        content: message,
+                        removable: true
+                    }});
+                    
+                    kakao.maps.event.addListener(marker, 'click', function() {{
+                        infowindow.open(map, marker);
+                    }});
+                }});
+            }}
         }}
 
         if (typeof kakao !== 'undefined') {{
@@ -232,4 +266,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
