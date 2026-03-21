@@ -64,7 +64,7 @@ def get_default_map_data(df):
             })
     return top3_df, map_data
 
-def render_kakao_map(locations, selected_name=None, height=600, level=8):
+def render_kakao_map(locations, selected_name=None, height=600, level=8, show_my_location=False):
     """카카오 맵 JavaScript API를 사용하여 지도를 렌더링"""
     if not locations:
         return st.info("지도에 표시할 데이터가 없습니다.")
@@ -163,8 +163,9 @@ def render_kakao_map(locations, selected_name=None, height=600, level=8):
                 map.setBounds(bounds);
             }}
 
-            // 현재 위치 표시 로직 추가
-            if (navigator.geolocation) {{
+            // 현재 위치 표시 및 이동 로직
+            var showMyLocation = "{'true' if show_my_location else 'false'}";
+            if (showMyLocation === 'true' && navigator.geolocation) {{
                 navigator.geolocation.getCurrentPosition(function(position) {{
                     var lat = position.coords.latitude,
                         lon = position.coords.longitude;
@@ -174,7 +175,6 @@ def render_kakao_map(locations, selected_name=None, height=600, level=8):
                                   '<strong>내 현재 위치</strong>' + 
                                   '</div>';
                     
-                    // 마커 이미지 설정 (별 모양 마커로 구분)
                     var imageSrc = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png"; 
                     var imageSize = new kakao.maps.Size(24, 35); 
                     var markerImage = new kakao.maps.MarkerImage(imageSrc, imageSize); 
@@ -194,6 +194,10 @@ def render_kakao_map(locations, selected_name=None, height=600, level=8):
                     kakao.maps.event.addListener(marker, 'click', function() {{
                         infowindow.open(map, marker);
                     }});
+
+                    // 내 위치로 지도 중심 이동
+                    map.setCenter(locPosition);
+                    map.setLevel(4); // 내 위치 확인 시 확대
                 }});
             }}
         }}
@@ -261,8 +265,10 @@ def main():
 
     with col1:
         st.subheader("📍 서울 지도")
+        # 내 위치 표시 토글 추가
+        show_my_loc = st.checkbox("📍 내 위치 표시 및 이동", value=False)
         target_name = selected_spot if selected_spot != "선택 안 함" else None
-        render_kakao_map(map_data, selected_name=target_name, height=600)
+        render_kakao_map(map_data, selected_name=target_name, height=600, show_my_location=show_my_loc)
 
 if __name__ == "__main__":
     main()
