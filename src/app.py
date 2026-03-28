@@ -127,7 +127,9 @@ def render_kakao_map(locations, height=700, level=8, show_my_location=False, cen
                 latlng: new kakao.maps.LatLng({loc['lat']}, {loc['lng']}),
                 category: '{loc.get('category', '')}',
                 district: '{loc.get('district', '')}',
-                congestion: '{cong_lvl}'
+                congestion: '{cong_lvl}',
+                indoor: '{loc.get("indoor", "-")}',
+                age: '{loc.get("age", "-")}'
             }},"""
         
         # 리스트에 혼잡도 뱃지 추가
@@ -210,13 +212,15 @@ def render_kakao_map(locations, height=700, level=8, show_my_location=False, cen
                     image: markerImg
                 }});
                 
-                var congColor = (positions[i].congestion === '붐빔') ? 'red' : ((positions[i].congestion === '여유') ? 'green' : 'orange');
-                var content = '<div style="padding:10px;min-width:150px;font-size:12px;">' + 
-                              '<strong>' + positions[i].title + '</strong><br>' + 
-                              '<span style="color:' + congColor + ';font-weight:bold;">실시간: ' + positions[i].congestion + '</span><br>' +
-                              (positions[i].district ? '<span>[' + positions[i].district + '] </span>' : '') +
+                var content = '<div style="padding:10px;min-width:180px;font-size:12px;line-height:1.6;border:none;">' + 
+                              '<div style="border-bottom:1px solid #eee;padding-bottom:5px;margin-bottom:5px;">' +
+                              '<strong style="font-size:14px;color:#2c3e50;">' + positions[i].title + '</strong></div>' + 
+                              '<div style="margin-bottom:4px;"><span style="color:' + congColor + ';font-weight:bold;background:' + congColor + '15;padding:2px 5px;border-radius:4px;">실시간: ' + positions[i].congestion + '</span></div>' +
+                              '<div style="color:#666;">' +
+                              '🏠 ' + positions[i].indoor + ' | 👥 ' + positions[i].age + '<br>' +
+                              (positions[i].district ? '📍 [' + positions[i].district + '] ' : '') +
                               '<span>' + positions[i].category + '</span>' +
-                              '</div>';
+                              '</div></div>';
                 var infowindow = new kakao.maps.InfoWindow({{ content: content }});
                 markers.push(marker);
                 infowindows.push(infowindow);
@@ -254,8 +258,8 @@ def render_kakao_map(locations, height=700, level=8, show_my_location=False, cen
             }}
             var targetMarker = markers[idx];
             infowindows[idx].open(map, targetMarker);
-            map.panTo(targetMarker.getPosition());
-            map.setLevel(2);
+            map.setCenter(targetMarker.getPosition());
+            map.setLevel(1);
             var item = document.getElementById('item-' + idx);
             item.classList.add('active');
             item.scrollIntoView({{ behavior: 'smooth', block: 'nearest' }});
@@ -373,7 +377,9 @@ def main():
                 'district': row['시/군/구'],
                 'lat': row['lat'],
                 'lng': row['lng'],
-                'congestion_lvl': realtime_status.get(cd, '정보없음')
+                'congestion_lvl': realtime_status.get(cd, '정보없음'),
+                'indoor': row.get('실내/실외 구분', '-'),
+                'age': row.get('추천 연령대', '-')
             })
 
     # 4. 지도 인터페이스 시각화
@@ -390,5 +396,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
