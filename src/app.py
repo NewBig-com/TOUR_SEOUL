@@ -20,7 +20,7 @@ SEOUL_CITY_DATA_API_KEY = os.getenv("SEOUL_CITY_DATA_API_KEY")
 @st.cache_data
 def load_main_data():
     project_root = os.path.join(os.path.dirname(__file__), '..')
-    file_path = os.path.join(project_root, 'data1', 'last_tour_filtered.csv')
+    file_path = os.path.join(project_root, 'data1', 'last_tour_enriched.csv')
     try:
         df = pd.read_csv(file_path)
         return df
