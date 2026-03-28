@@ -318,6 +318,23 @@ def main():
             center_lng = target_row['lng']
             target_cd = target_row.get('area_cd')
             
+            # 상세 설명 카드 데이터 추출
+            indoor_outdoor = target_row.get('실내/실외 구분', '-')
+            age_group = target_row.get('추천 연령대', '-')
+            search_cnt = f"{target_row.get('검색건수', 0):,}"
+            address = f"{target_row.get('광역시', '서울')} {target_row.get('시/군/구', '')}"
+
+            # 상세 정보 카드 렌더링
+            st.sidebar.markdown(f"""
+                <div style="padding: 15px; border-radius: 10px; background-color: #ffffff; border: 1px solid #e0e0e0; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <h4 style="margin-top:0; color:#2c3e50; font-size: 1.1em;">🏛️ 장소 상세 정보</h4>
+                    <p style="margin: 5px 0; font-size: 0.9em;"><b>구분:</b> {indoor_outdoor}</p>
+                    <p style="margin: 5px 0; font-size: 0.9em;"><b>추천:</b> {age_group}</p>
+                    <p style="margin: 5px 0; font-size: 0.9em;"><b>인기:</b> {search_cnt}회 검색</p>
+                    <p style="margin: 5px 0; font-size: 0.85em; color: #7f8c8d;">📍 {address}</p>
+                </div>
+            """, unsafe_allow_html=True)
+
             # 실시간 데이터 표시
             if target_cd:
                 with st.sidebar:
@@ -373,4 +390,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
