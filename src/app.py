@@ -212,6 +212,9 @@ def render_kakao_map(locations, height=700, level=8, show_my_location=False, cen
                     image: markerImg
                 }});
                 
+                var congColor = (positions[i].congestion === '붐빔') ? '#e74c3c' : 
+                                ((positions[i].congestion === '여유') ? '#2ecc71' : 
+                                ((positions[i].congestion === '보통') ? '#f1c40f' : '#e67e22'));
                 var content = '<div style="padding:10px;min-width:180px;font-size:12px;line-height:1.6;border:none;">' + 
                               '<div style="border-bottom:1px solid #eee;padding-bottom:5px;margin-bottom:5px;">' +
                               '<strong style="font-size:14px;color:#2c3e50;">' + positions[i].title + '</strong></div>' + 
@@ -396,4 +399,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
