@@ -12,6 +12,7 @@ st.set_page_config(page_title="서울 관광지 검색 서비스", layout="wide"
 # .env 파일 로드
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path)
+DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data1')
 
 # KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY") # 더 이상 사용하지 않음
 KAKAO_JS_API_KEY = os.getenv("KAKAO_JS_API_KEY")
@@ -28,6 +29,17 @@ def load_main_data():
         st.error(f"데이터를 불러오는데 실패했습니다: {e}")
         return pd.DataFrame()
 
+def load_cosmetic_data():
+    file_path = os.path.join(DATA_DIR, "seoul_cosmetic.csv")
+    if os.path.exists(file_path):
+        try:
+            df = pd.read_csv(file_path)
+            # Clean column names (strip whitespace, remove BOM)
+            df.columns = [c.strip().replace('\ufeff', '') for c in df.columns]
+            return df
+        except Exception as e:
+            st.error(f"화장품 데이터를 로드하는 중 오류 발생: {e}")
+    return pd.DataFrame()
 
 @st.cache_data(ttl=600)  # 10분마다 캐시 갱신
 def get_seoul_city_data(location_id):
@@ -110,7 +122,7 @@ def get_area_nm_by_cd(area_cd):
             return match.iloc[0]['AREA_NM']
     return None
 
-def render_kakao_map(locations, height=700, level=8, show_my_location=False, center_lat=None, center_lng=None):
+def render_kakao_map(locations, cosmetic_locations=None, height=700, level=8, show_my_location=False, center_lat=None, center_lng=None):
     """카카오 맵과 관광지 목록을 통합하여 렌더링"""
     if not locations:
         return st.info("지도에 표시할 데이터가 없습니다.")
@@ -145,6 +157,18 @@ def render_kakao_map(locations, height=700, level=8, show_my_location=False, cen
                 <div class="item-info">[{loc.get('district', '')}] {loc.get('category', '')}</div>
             </div>"""
 
+    # 화장품 매장 마커 JS 생성
+    cosmo_markers_js = ""
+    if cosmetic_locations:
+        for cos in cosmetic_locations:
+            cosmo_markers_js += f"""
+                {{
+                    title: '{cos['매장명']}',
+                    latlng: new kakao.maps.LatLng({cos['위도']}, {cos['경도']}),
+                    maker: '{cos['메이커명']}',
+                    address: '{cos['주소']}'
+                }},"""
+
     html_code = f"""
     <head>
         <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
@@ -176,6 +200,7 @@ def render_kakao_map(locations, height=700, level=8, show_my_location=False, cen
     <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_API_KEY}&autoload=false"></script>
     <script>
         var map, markers = [], infowindows = [];
+        var cosmo_markers = [], cosmo_infowindows = [];
         
         // 상태별 마커 이미지 설정
         var ICON_URLS = {{
@@ -198,6 +223,13 @@ def render_kakao_map(locations, height=700, level=8, show_my_location=False, cen
             var mapOption = {{ center: new kakao.maps.LatLng(centerLat, centerLng), level: mapLevel }};
             map = new kakao.maps.Map(mapContainer, mapOption); 
             var positions = [{markers_js}];
+            var cosmo_positions = [{cosmo_markers_js}];
+
+            // 화장품 매장 아이콘 (OY: Blue, Daiso: Red)
+            var COSMO_ICONS = {{
+                'oliveyoung': 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+                'daiso': 'http://maps.google.com/mapfiles/ms/icons/red-dot.png'
+            }};
 
             for (var i = 0; i < positions.length; i ++) {{
                 var markerImg = new kakao.maps.MarkerImage(
@@ -235,9 +267,37 @@ def render_kakao_map(locations, height=700, level=8, show_my_location=False, cen
                 }})(marker, infowindow, i);
             }}
 
+            // 화장품 매장 마커 추가
+            for (var k = 0; k < cosmo_positions.length; k++) {{
+                var makerName = cosmo_positions[k].maker.toLowerCase();
+                var iconUrl = (makerName === 'oliveyoung') ? COSMO_ICONS['oliveyoung'] : COSMO_ICONS['daiso'];
+                
+                var cMarker = new kakao.maps.Marker({{
+                    map: map,
+                    position: cosmo_positions[k].latlng,
+                    title: cosmo_positions[k].title,
+                    image: new kakao.maps.MarkerImage(iconUrl, new kakao.maps.Size(32, 32))
+                }});
+                
+                var badgeColor = (makerName === 'oliveyoung') ? '#228be6' : '#e74c3c';
+                var cContent = '<div style="padding:10px;min-width:180px;font-size:12px;line-height:1.6;border:none;">' + 
+                               '<div style="border-bottom:1px solid #eee;padding-bottom:5px;margin-bottom:5px;">' +
+                               '<strong style="font-size:14px;color:#2c3e50;">' + cosmo_positions[k].title + '</strong> ' +
+                               '<span style="font-size:10px;color:#fff;background:' + badgeColor + ';padding:2px 4px;border-radius:3px;margin-left:5px;">' + cosmo_positions[k].maker + '</span></div>' + 
+                               '<div style="color:#666;">' + cosmo_positions[k].address + '</div></div>';
+                
+                var cInfo = new kakao.maps.InfoWindow({{ content: cContent }});
+                
+                (function(m, info) {{
+                    kakao.maps.event.addListener(m, 'mouseover', function() {{ info.open(map, m); }});
+                    kakao.maps.event.addListener(m, 'mouseout', function() {{ info.close(); }});
+                }})(cMarker, cInfo);
+            }}
+
             if (positions.length > 0) {{
                 var bounds = new kakao.maps.LatLngBounds();
                 for (var i = 0; i < positions.length; i++) {{ bounds.extend(positions[i].latlng); }}
+                for (var j = 0; j < cosmo_positions.length; j++) {{ bounds.extend(cosmo_positions[j].latlng); }}
                 map.setBounds(bounds);
             }}
 
@@ -389,8 +449,13 @@ def main():
     st.subheader("📍 서울 관광지 지도 (목록 연동)")
     show_my_loc = st.checkbox("📍 내 위치 표시", value=False)
     
+    # 화장품 매장 데이터 로드
+    cosmo_df = load_cosmetic_data()
+    cosmetic_list = cosmo_df.to_dict('records') if not cosmo_df.empty else []
+
     render_kakao_map(
         map_data, 
+        cosmetic_locations=cosmetic_list,
         height=700, 
         show_my_location=show_my_loc,
         center_lat=center_lat,
