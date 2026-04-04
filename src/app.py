@@ -7,6 +7,8 @@ import base64
 import xml.etree.ElementTree as ET
 from dotenv import load_dotenv
 import streamlit.components.v1 as components
+import re
+from urllib.parse import urlparse, parse_qs
 # from streamlit_option_menu import option_menu # Removed as no longer used
 # from streamlit_geolocation import streamlit_geolocation # Removed as no longer used
 
@@ -180,6 +182,19 @@ def get_base64_img(path):
     with open(path, 'rb') as f:
         return base64.b64encode(f.read()).decode()
 
+def get_oy_image_url(product_url):
+    if not isinstance(product_url, str): return None
+    parsed_url = urlparse(product_url)
+    params = parse_qs(parsed_url.query)
+    goods_no = params.get('goodsNo', [None])[0]
+    if not goods_no:
+        match = re.search(r'goodsNo=([A-Z0-9]+)', product_url)
+        if match: goods_no = match.group(1)
+    if goods_no:
+        prefix = goods_no[7:9]
+        return f"https://image.oliveyoung.co.kr/uploads/images/goods/10/0000/00{prefix}/{goods_no}.jpg"
+    return None
+
 def find_image_path(product_name, brand):
     folder = 'oliveyoung_best' if brand == 'oliveyoung' else 'daiso_best'
     target_dir = os.path.join(IMG_DIR, folder)
@@ -189,7 +204,6 @@ def find_image_path(product_name, brand):
         if name_norm in unicodedata.normalize('NFC', f).replace(' ', ''):
             return os.path.join(target_dir, f)
     return None
-
 # --- 3. City Data API ---
 @st.cache_data(ttl=600)
 def get_congestion_data(location_id):
@@ -300,7 +314,18 @@ def main():
                         name = row[name_col]
                         price = int(row[price_col])
                         img_path = find_image_path(name, brand)
-                        img_tag = f'<img src="data:image/jpeg;base64,{get_base64_img(img_path)}" class="product-img">' if img_path else '<div class="product-img" style="background:#eee; line-height:100px; font-size:10px;">No Image</div>'
+                        img_base64 = get_base64_img(img_path)
+                        
+                        if img_base64:
+                            img_tag = f'<img src="data:image/jpeg;base64,{img_base64}" class="product-img">'
+                        else:
+                            # Fallback
+                            remote_url = get_oy_image_url(row['url']) if brand == 'oliveyoung' else row.get('image_url')
+                            if remote_url:
+                                img_tag = f'<img src="{remote_url}" class="product-img">'
+                            else:
+                                img_tag = '<div class="product-img" style="background:#eee; line-height:100px; font-size:10px;">No Image</div>'
+                        
                         st.markdown(f"""
                             <div class="product-card">
                                 {img_tag}
@@ -308,6 +333,7 @@ def main():
                                 <div class="product-price">{price:,}원</div>
                             </div>
                         """, unsafe_allow_html=True)
+
                 st.markdown("</div>", unsafe_allow_html=True)
 
         # Tourist Top 10 + Map
@@ -371,7 +397,18 @@ def main():
                         name = row[name_col]
                         price = int(row[price_col])
                         img_path = find_image_path(name, brand)
-                        img_tag = f'<img src="data:image/jpeg;base64,{get_base64_img(img_path)}" class="product-img">' if img_path else '<div class="product-img" style="line-height:120px;">No Image</div>'
+                        img_base64 = get_base64_img(img_path)
+                        
+                        if img_base64:
+                            img_tag = f'<img src="data:image/jpeg;base64,{img_base64}" class="product-img">'
+                        else:
+                            # Fallback
+                            remote_url = get_oy_image_url(row['url']) if brand == 'oliveyoung' else row.get('image_url')
+                            if remote_url:
+                                img_tag = f'<img src="{remote_url}" class="product-img">'
+                            else:
+                                img_tag = '<div class="product-img" style="line-height:120px;">No Image</div>'
+                                
                         st.markdown(f"""
                             <div class="product-card" style="margin-bottom:15px;">
                                 <div class="best-label" style="font-size:0.6rem; padding:2px 8px;">TOP {i+1}</div>
@@ -380,6 +417,7 @@ def main():
                                 <div class="product-price" style="font-size:0.8rem;">{price:,}원</div>
                             </div>
                         """, unsafe_allow_html=True)
+                        
                 
                 # View More Toggle
                 if not show_full:
@@ -475,6 +513,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
