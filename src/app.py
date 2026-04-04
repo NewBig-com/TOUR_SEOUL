@@ -7,8 +7,9 @@ import base64
 import xml.etree.ElementTree as ET
 from dotenv import load_dotenv
 import streamlit.components.v1 as components
-from streamlit_option_menu import option_menu
-from streamlit_geolocation import streamlit_geolocation
+# from streamlit_option_menu import option_menu # Removed as no longer used
+# from streamlit_geolocation import streamlit_geolocation # Removed as no longer used
+
 
 # --- 1. Page Configuration & Styling ---
 st.set_page_config(page_title="Seoul Beauty & Tour Dashboard", layout="wide", initial_sidebar_state="expanded")
@@ -153,6 +154,11 @@ def inject_custom_css():
             color: #F93780 !important;
             border-bottom-color: #F93780 !important;
         }
+        .badge-여유 { background: #00B894; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; margin-left: 5px; }
+        .badge-보통 { background: #6C5CE7; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; margin-left: 5px; }
+        .badge-약간붐빔 { background: #E17055; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; margin-left: 5px; }
+        .badge-붐빔 { background: #D63031; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; margin-left: 5px; }
+        .badge-정보없음 { background: #B2BEC3; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; margin-left: 5px; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -187,25 +193,25 @@ def find_image_path(product_name, brand):
 # --- 3. City Data API ---
 @st.cache_data(ttl=600)
 def get_congestion_data(location_id):
-    if not SEOUL_CITY_DATA_API_KEY: return {"error": "API Key Missing"}
+    if not location_id or not SEOUL_CITY_DATA_API_KEY: return {"lvl": "정보없음", "color": "#B2BEC3"}
     url = f"http://openapi.seoul.go.kr:8088/{SEOUL_CITY_DATA_API_KEY}/xml/citydata/1/5/{location_id}"
     try:
         res = requests.get(url)
         root = ET.fromstring(res.content)
         stts = root.find(".//LIVE_PPLTN_STTS/LIVE_PPLTN_STTS")
         if stts is not None:
-            return {
-                "lvl": stts.findtext("AREA_CONGEST_LVL"),
-                "msg": stts.findtext("AREA_CONGEST_MSG")
-            }
+            lvl = stts.findtext("AREA_CONGEST_LVL")
+            colors = {"여유": "#00B894", "보통": "#6C5CE7", "약간 붐빔": "#E17055", "붐빔": "#D63031"}
+            return {"lvl": lvl, "color": colors.get(lvl, "#B2BEC3")}
     except: pass
-    return {"lvl": "Info Unavailable", "msg": ""}
+    return {"lvl": "정보없음", "color": "#B2BEC3"}
 
 # --- 4. Map Rendering ---
 def render_map(locations, stores=None, center=(37.5665, 126.9780), zoom=7, height=450):
     marker_js = ""
     for loc in locations:
-        marker_js += f"{{lat:{loc['lat']},lng:{loc['lng']},title:'{loc['name']}',type:'tour'}},"
+        lvl_tag = f"[{loc.get('lvl', '정보없음')}]" if 'lvl' in loc else ""
+        marker_js += f"{{lat:{loc['lat']},lng:{loc['lng']},title:'{loc['name']} {lvl_tag}',type:'tour'}},"
     
     if stores:
         for s in stores:
@@ -315,17 +321,25 @@ def main():
                     tour_filtered = tour_filtered[tour_filtered['중분류 카테고리'] == sel_tour_cat]
                 top_10 = tour_filtered.head(10)
                 for i, (_, row) in enumerate(top_10.iterrows()):
+                    congest = get_congestion_data(row.get('area_cd'))
+                    cls = congest['lvl'].replace(" ", "")
                     st.markdown(f"""
                     <div class="ranking-row">
                         <div class="rank-num">{i+1}</div>
                         <div style="flex:1;">
-                            <div style="font-weight:700; font-size:0.9rem;">{row['관광지명']}</div>
+                            <div style="font-weight:700; font-size:0.9rem;">
+                                {row['관광지명']} 
+                                <span class="badge-{cls}">{congest['lvl']}</span>
+                            </div>
                             <div style="font-size:0.75rem; color:#888;">{row['시/군/구']} | {row['소분류 카테고리']}</div>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
             with r_col:
-                map_locs = [{'lat': r['lat'], 'lng': r['lng'], 'name': r['관광지명']} for _, r in top_10.iterrows()]
+                map_locs = []
+                for _, r in top_10.iterrows():
+                    congest = get_congestion_data(r.get('area_cd'))
+                    map_locs.append({'lat': r['lat'], 'lng': r['lng'], 'name': r['관광지명'], 'lvl': congest['lvl']})
                 render_map(map_locs, height=500)
 
     # --- COSMETICS TAB ---
@@ -435,15 +449,32 @@ def main():
             
             top_5_gu = gu_data.head(5)
             for i, (_, row) in enumerate(top_5_gu.iterrows()):
-                st.warning(f"**#{i+1}**: {row['관광지명']} ({row['소분류 카테고리']})")
+                congest = get_congestion_data(row.get('area_cd'))
+                cls = congest['lvl'].replace(" ", "")
+                st.markdown(f"""
+                <div class="ranking-row">
+                    <div class="rank-num">{i+1}</div>
+                    <div style="flex:1;">
+                        <div style="font-weight:700; font-size:0.85rem;">
+                            {row['관광지명']}
+                            <span class="badge-{cls}">{congest['lvl']}</span>
+                        </div>
+                        <div style="font-size:0.7rem; color:#888;">{row['소분류 카테고리']}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
         with col_f2:
             st.markdown("#### 🗺️ Unified Interactive Map (Stores & Attractions)")
             map_stores = df_stores.to_dict('records')
-            map_tour_data = [{'lat': r['lat'], 'lng': r['lng'], 'name': r['관광지명']} for _, r in gu_data.head(50).iterrows()]
-            render_map(map_tour_data, stores=map_stores, height=600, zoom=7)
+            map_tour_items = []
+            for _, r in gu_data.head(50).iterrows():
+                congest = get_congestion_data(r.get('area_cd'))
+                map_tour_items.append({'lat': r['lat'], 'lng': r['lng'], 'name': r['관광지명'], 'lvl': congest['lvl']})
+            render_map(map_tour_items, stores=map_stores, height=600, zoom=7)
 
 if __name__ == "__main__":
     main()
+
 
 
